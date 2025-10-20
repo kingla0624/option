@@ -1,0 +1,404 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ECharts 多腿期权到期收益图（HTML+JS 版，增强）</title>
+  <style>
+    :root { --bd:#e5e7eb; --fg:#111827; --muted:#6b7280; --bg:#ffffff; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif; margin: 0; background:#f9fafb; color:var(--fg); }
+    .wrap { max-width: 1100px; margin: 24px auto; padding: 0 16px; }
+    .card { background:var(--bg); border:1px solid var(--bd); border-radius: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+    .card .hd { padding:16px 18px; border-bottom:1px solid var(--bd); font-weight:600; }
+    .card .bd { padding:16px 18px; }
+    .row { display:grid; grid-template-columns: repeat(12, 1fr); gap:12px; }
+    .field { display:flex; flex-direction:column; gap:6px; }
+    .field input, .field select { padding:8px 10px; border:1px solid var(--bd); border-radius:10px; font-size:14px; }
+    .btn { padding:8px 12px; border:1px solid var(--bd); border-radius:10px; background:#f3f4f6; cursor:pointer; }
+    .btn.primary { background:#2563eb; color:#fff; border-color:#1d4ed8; }
+    .btn.danger { background:#fee2e2; color:#b91c1c; border-color:#fecaca; }
+    .muted { color:var(--muted); font-size:12px; }
+    table { width:100%; border-collapse: collapse; }
+    th, td { padding:8px 10px; border-bottom:1px solid var(--bd); text-align:left; }
+    th { font-weight:600; color:#374151; }
+    .number { width:110px; }
+    #chart { height: 480px; }
+    .kpis { display:grid; grid-template-columns: repeat(5,1fr); gap:12px; }
+    .kpi { padding:12px; border:1px solid var(--bd); border-radius:12px; background:#fff; }
+    .kpi .t { font-size:12px; color:#6b7280; }
+    .kpi .v { font-size:20px; font-weight:600; }
+    #diag { font-family: ui-monospace, Menlo, Consolas, monospace; font-size:12px; white-space:pre-wrap; background:#fff; border:1px solid var(--bd); border-radius:12px; padding:12px; }
+    @media (max-width: 720px){ .row{grid-template-columns: repeat(6,1fr);} .kpis{grid-template-columns: repeat(2,1fr);} }
+  </style>
+  <!-- ECharts CDN（需联网）。若需离线，请自行改为本地文件路径。 -->
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5"></script>
+</head>
+<body>
+  <div class="wrap">
+    <h1 style="margin:0 0 12px; font-size:22px;">ECharts 多腿期权到期收益图（HTML+JS 版，增强）</h1>
+    <div class="muted" style="margin-bottom:16px;">到期 P&L；支持多腿；导出 PNG/CSV；策略名自/手动；新增 <b>当前标的价格 S₀</b> 标注。</div>
+
+    <div class="card" style="margin-bottom:12px;">
+      <div class="bd">
+        <div class="row">
+          <label class="field" style="grid-column: span 3;">
+            <span class="muted">标的价格最小值</span>
+            <input id="priceMin" type="number" value="1500" />
+          </label>
+          <label class="field" style="grid-column: span 3;">
+            <span class="muted">标的价格最大值</span>
+            <input id="priceMax" type="number" value="3500" />
+          </label>
+          <label class="field" style="grid-column: span 3;">
+            <span class="muted">步长</span>
+            <input id="step" type="number" value="10" />
+          </label>
+          <label class="field" style="grid-column: span 3;">
+            <span class="muted">当前标的价格 S₀</span>
+            <input id="currentPrice" type="number" value="2600" />
+          </label>
+        </div>
+        <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; align-items:center;">
+          <label class="field" style="flex:1; min-width:220px;">
+            <span class="muted">策略名</span>
+            <input id="strategyNameInput" type="text" value="" />
+          </label>
+          <button id="toggleLegLines" class="btn">隐藏单腿曲线</button>
+          <button id="addLeg" class="btn primary">添加腿</button>
+          <button id="exportPNG" class="btn">导出 PNG</button>
+          <button id="exportCSV" class="btn">导出 CSV</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:12px;">
+      <div class="hd">期权腿</div>
+      <div class="bd">
+        <table id="legsTable">
+          <thead>
+            <tr>
+              <th>类型</th>
+              <th>方向</th>
+              <th>行权价 K</th>
+              <th>权利金</th>
+              <th>数量</th>
+              <th>乘数</th>
+              <th>显示</th>
+              <th style="width:80px;">操作</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="kpis" style="margin-bottom:12px;">
+      <div class="kpi"><div class="t">净权利金（收/付）</div><div class="v" id="kpiPremium">0</div><div class="muted">正=净收取；负=净支付</div></div>
+      <div class="kpi"><div class="t">盈亏平衡点</div><div class="v" id="kpiBE">—</div></div>
+      <div class="kpi"><div class="t">最大利润（范围内）</div><div class="v" id="kpiMax">0</div><div class="muted" id="hintMax"></div></div>
+      <div class="kpi"><div class="t">最大亏损（范围内）</div><div class="v" id="kpiMin">0</div><div class="muted" id="hintMin"></div></div>
+      <div class="kpi"><div class="t">当前价 P&L</div><div class="v" id="kpiAtS0">—</div><div class="muted" id="hintS0"></div></div>
+    </div>
+
+    <div class="card" style="margin-bottom:12px;">
+      <div class="hd">诊断 / 测试</div>
+      <div class="bd"><div id="diag">尚未运行测试。</div></div>
+    </div>
+
+    <div class="card">
+      <div class="bd">
+        <div id="chart"></div>
+        <div class="muted" style="margin-top:8px;">提示：虚线＝单腿；实线＝组合总P&L；竖线与圆点标示 S₀。</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function(){
+  'use strict';
+
+  // ==== 状态与 DOM ====
+  const legs = [
+    { id: uid(), type: 'Call', side: 'Buy',  strike: 2600, premium: 50, qty: 1, multiplier: 300, showLine: false },
+    { id: uid(), type: 'Call', side: 'Sell', strike: 2700, premium: 30, qty: 1, multiplier: 300, showLine: false },
+  ];
+  let showLegLines = true;
+
+  const elMin = document.getElementById('priceMin');
+  const elMax = document.getElementById('priceMax');
+  const elStep = document.getElementById('step');
+  const elS0  = document.getElementById('currentPrice');
+  const elAdd = document.getElementById('addLeg');
+  const elToggle = document.getElementById('toggleLegLines');
+  const elExportPNG = document.getElementById('exportPNG');
+  const elExportCSV = document.getElementById('exportCSV');
+  const elName = document.getElementById('strategyNameInput');
+  const tbody = document.querySelector('#legsTable tbody');
+
+  const kpiPremium = document.getElementById('kpiPremium');
+  const kpiBE = document.getElementById('kpiBE');
+  const kpiMax = document.getElementById('kpiMax');
+  const kpiMin = document.getElementById('kpiMin');
+  const kpiAtS0 = document.getElementById('kpiAtS0');
+  const hintMax = document.getElementById('hintMax');
+  const hintMin = document.getElementById('hintMin');
+  const hintS0  = document.getElementById('hintS0');
+  const diagEl  = document.getElementById('diag');
+
+  if (typeof echarts === 'undefined') {
+    const warn = document.createElement('div');
+    warn.style.color = '#b91c1c';
+    warn.style.margin = '12px 0';
+    warn.textContent = '未能加载 ECharts，请检查网络或改用本地 echarts.min.js。';
+    document.querySelector('.wrap').prepend(warn);
+  }
+  const chart = (typeof echarts !== 'undefined') ? echarts.init(document.getElementById('chart')) : null;
+
+  // ==== 工具函数 ====
+  function uid(){ return 'id-' + Math.random().toString(36).slice(2,10); }
+  function round2(n){ return Math.round(n*100)/100; }
+  function payoffPerUnit(type, S, K){ return type==='Call' ? Math.max(S-K,0) : Math.max(K-S,0); }
+  function buildX(min, max, step){
+    min = Number(min); max = Number(max); step = Math.max(1, Number(step)||1);
+    const start = Math.min(min, max), end = Math.max(min, max); const xs = [];
+    for(let p=start; p<=end; p+=step) xs.push(round2(p));
+    if(xs[xs.length-1]!==end) xs.push(end);
+    return xs;
+  }
+  function interpY(xs, ys, x){
+    if(!xs.length || x<xs[0] || x>xs[xs.length-1]) return null;
+    const idxExact = xs.indexOf(x);
+    if(idxExact>=0) return ys[idxExact];
+    for(let i=1;i<xs.length;i++){
+      const x1=xs[i-1], x2=xs[i];
+      if(x>x1 && x<x2){
+        const t=(x-x1)/(x2-x1); return ys[i-1]+t*(ys[i]-ys[i-1]);
+      }
+    }
+    return null;
+  }
+  function findBreakevens(xs, ys){
+    const bes=[];
+    for(let i=1;i<xs.length;i++){
+      const y1=ys[i-1], y2=ys[i];
+      if((y1<=0&&y2>=0)||(y1>=0&&y2<=0)){
+        const x1=xs[i-1], x2=xs[i];
+        const t=(y2===y1)?0:(0-y1)/(y2-y1);
+        bes.push(round2(x1+t*(x2-x1)));
+      }
+    }
+    return Array.from(new Set(bes.map(v=>v.toFixed(2)))).map(v=>Number(v));
+  }
+  function estimateExtremes(xs, ys){
+    const minPnL=Math.min(...ys), maxPnL=Math.max(...ys);
+    const minMayUnbounded=(minPnL===ys[0] || minPnL===ys[ys.length-1]);
+    const maxMayUnbounded=(maxPnL===ys[0] || maxPnL===ys[ys.length-1]);
+    return { minPnL:round2(minPnL), maxPnL:round2(maxPnL), minMayUnbounded, maxMayUnbounded };
+  }
+  function autoNameFromLegs(){
+    return legs.map(l=>`${l.side[0]}${l.type[0]}${l.strike}`).join('_') || 'options';
+  }
+
+  // ==== 渲染腿表 ====
+  function renderLegsTable(){
+    tbody.innerHTML='';
+    for(const leg of legs){
+      const tr=document.createElement('tr');
+      tr.innerHTML=`
+        <td>
+          <select data-key="type"><option ${leg.type==='Call'?'selected':''}>Call</option><option ${leg.type==='Put'?'selected':''}>Put</option></select>
+        </td>
+        <td>
+          <select data-key="side"><option ${leg.side==='Buy'?'selected':''}>Buy</option><option ${leg.side==='Sell'?'selected':''}>Sell</option></select>
+        </td>
+        <td><input class="number" data-key="strike" type="number" value="${leg.strike}"></td>
+        <td><input class="number" data-key="premium" type="number" value="${leg.premium}"></td>
+        <td><input class="number" data-key="qty" type="number" value="${leg.qty}"></td>
+        <td><input class="number" data-key="multiplier" type="number" value="${leg.multiplier}"></td>
+        <td style="text-align:center"><input type="checkbox" data-key="showLine" ${leg.showLine?'checked':''}></td>
+        <td><button class="btn danger" data-action="del">删除</button></td>
+      `;
+      tr.querySelectorAll('select,input').forEach(el=>{
+        el.addEventListener('change', ()=>{
+          const key=el.getAttribute('data-key');
+          if(key==='showLine') leg.showLine=el.checked;
+          else if(key==='type') leg.type=el.value;
+          else if(key==='side') leg.side=el.value;
+          else leg[key]=Number(el.value);
+          drawSafe(true);
+        });
+      });
+      tr.querySelector('[data-action="del"]').addEventListener('click', ()=>{
+        const idx=legs.findIndex(l=>l.id===leg.id);
+        if(idx>-1){ legs.splice(idx,1); renderLegsTable(); drawSafe(true); }
+      });
+      tbody.appendChild(tr);
+    }
+  }
+
+  // ==== 计算与绘图 ====
+  function compute(){
+    const xs = buildX(elMin.value, elMax.value, elStep.value);
+    const total = new Array(xs.length).fill(0);
+    const legSeries = [];
+
+    for(const leg of legs){
+      const sgn = (leg.side==='Buy')? 1 : -1;
+      const data = [];
+      for(let i=0;i<xs.length;i++){
+        const S=xs[i];
+        const intrinsic = payoffPerUnit(leg.type, S, leg.strike);
+        const pnlPerUnit = sgn*intrinsic - (leg.side==='Buy'? leg.premium : -leg.premium);
+        const pnl = pnlPerUnit * leg.qty * leg.multiplier;
+        data.push(round2(pnl));
+        total[i]+=pnl;
+      }
+      if(showLegLines && leg.showLine){ legSeries.push({ name:`${leg.side} ${leg.type} K=${leg.strike}`, data }); }
+    }
+
+    const bes = findBreakevens(xs, total);
+    const ext = estimateExtremes(xs, total);
+    const s0 = Number(elS0.value);
+    let curPnL = null;
+    if (!Number.isNaN(s0)) curPnL = interpY(xs, total, s0);
+
+    const netPremium = legs.reduce((acc, leg)=> acc + ((leg.side==='Buy'? -1:1) * leg.premium * leg.qty * leg.multiplier), 0);
+
+    return { xs, total: total.map(round2), legSeries, bes, ext, netPremium: round2(netPremium), curPnL: curPnL==null? null: round2(curPnL) };
+  }
+
+  function draw(shouldAutoName){
+    if(!chart) return;
+    const { xs, total, legSeries, bes, ext, netPremium, curPnL } = compute();
+
+    // KPI
+    kpiPremium.textContent = (netPremium>=0? '+':'') + netPremium.toLocaleString();
+    kpiBE.textContent = bes.length? bes.join(', ') : '（无交点）';
+    kpiMax.textContent = ext.maxPnL.toLocaleString();
+    kpiMin.textContent = ext.minPnL.toLocaleString();
+    kpiAtS0.textContent = (curPnL==null? '—' : curPnL.toLocaleString());
+
+    // 轴范围：若 S₀ 超出范围，则自动扩展以包含 S₀，并提示
+    const s0 = Number(elS0.value);
+    let xmin = Math.min(Number(elMin.value), Number(elMax.value));
+    let xmax = Math.max(Number(elMin.value), Number(elMax.value));
+    let s0Hint = '';
+    if(!Number.isNaN(s0)){
+      const pad = Math.max(1, Math.round((xmax-xmin)*0.02));
+      if(s0 < xmin){ xmin = s0 - pad; s0Hint = '已自动扩展 X 轴以包含 S₀'; }
+      if(s0 > xmax){ xmax = s0 + pad; s0Hint = '已自动扩展 X 轴以包含 S₀'; }
+    }
+    hintS0.textContent = s0Hint;
+
+    const option = {
+      tooltip: { trigger:'axis', valueFormatter:(v)=> typeof v==='number'? v.toFixed(2): v },
+      legend: { top: 0 },
+      grid: { left: 50, right: 24, top: 40, bottom: 50 },
+      xAxis: { type:'value', name:'标的价格 S', min:xmin, max:xmax, axisPointer:{show:true} },
+      yAxis: { type:'value', name:'到期 P&L' },
+      series: [
+        { name:'总 P&L', type:'line', showSymbol:false, lineStyle:{ width:3 }, data: xs.map((x,i)=>[x,total[i]]) },
+        ...legSeries.map(ls=>({ name: ls.name, type:'line', showSymbol:false, lineStyle:{ width:1.5, type:'dashed' }, data: xs.map((x,i)=>[x,ls.data[i]]) })),
+        ...(Number.isNaN(s0) || curPnL==null ? [] : [
+          { name:'当前价点', type:'scatter', symbolSize:10, data:[[s0, curPnL]] }
+        ])
+      ],
+      markLine: undefined
+    };
+
+    chart.setOption(option, true);
+
+    // 竖直标线（用 graphic 实现，避免全局 markLine 干扰）
+    if(!Number.isNaN(s0)){
+      chart.setOption({
+        markLine: undefined,
+        series: option.series,
+        graphic: [
+          { type:'group', left:12, bottom:6, children:[{ type:'text', style:{ text:'提示：虚线=单腿；实线=组合总P&L；圆点= S₀', fontSize:12 }}] }
+        ]
+      });
+    }
+
+    // 策略名默认
+    if(shouldAutoName){ elName.value = autoNameFromLegs(); }
+  }
+
+  function drawSafe(shouldAutoName){
+    try { draw(shouldAutoName); }
+    catch(err){ console.error(err); diagEl.textContent = '渲染错误：' + (err && err.message ? err.message : String(err)); }
+  }
+
+  // ==== 导出 ====
+  function download(filename, blob){
+    const url = URL.createObjectURL(blob); const a=document.createElement('a');
+    a.href=url; a.download=filename; document.body.appendChild(a); a.click();
+    setTimeout(()=>{ document.body.removeChild(a); URL.revokeObjectURL(url); }, 0);
+  }
+  function exportPNG(){
+    if(!chart) return;
+    const now = new Date();
+    const ts = now.toISOString().slice(0,19).replace(/[-T:]/g,'');
+    const autoName = autoNameFromLegs();
+    const custom = elName.value.trim();
+    const fname = `payoff_${custom || autoName}_${ts}.png`;
+    const dataURL = chart.getDataURL({ type: 'png', pixelRatio: 2, backgroundColor: '#ffffff' });
+    fetch(dataURL).then(res=>res.blob()).then(blob=> download(fname, blob));
+  }
+  function exportCSV(){
+    const xs = buildX(elMin.value, elMax.value, elStep.value);
+    const legData = legs.map(leg=>({ name:`${leg.side} ${leg.type} K=${leg.strike}`, arr:new Array(xs.length).fill(0) }));
+    const total = new Array(xs.length).fill(0);
+    legs.forEach((leg, li)=>{
+      const sgn = (leg.side==='Buy')? 1 : -1;
+      for(let i=0;i<xs.length;i++){
+        const S=xs[i];
+        const intrinsic=payoffPerUnit(leg.type,S,leg.strike);
+        const pnlPerUnit= sgn*intrinsic - (leg.side==='Buy'? leg.premium : -leg.premium);
+        const pnl = pnlPerUnit * leg.qty * leg.multiplier;
+        legData[li].arr[i]=round2(pnl); total[i]+=pnl;
+      }
+    });
+    const headers=['Price','Total',...legData.map(d=>d.name)];
+    const rows=[headers.join(',')];
+    for(let i=0;i<xs.length;i++) rows.push([xs[i], round2(total[i]), ...legData.map(d=>d.arr[i])].join(','));
+    const csvContent='\uFEFF'+rows.join('\n'); // 关键修复：使用标准换行与 BOM
+    const now = new Date();
+    const ts = now.toISOString().slice(0,19).replace(/[-T:]/g,'');
+    const autoName = autoNameFromLegs();
+    const custom = elName.value.trim();
+    const fname = `payoff_${custom || autoName}_${ts}.csv`;
+    download(fname, new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }));
+  }
+
+  // ==== 事件绑定 ====
+  elAdd.addEventListener('click', ()=>{ legs.push({ id: uid(), type:'Call', side:'Buy', strike:2600, premium:40, qty:1, multiplier:300, showLine:true }); renderLegsTable(); drawSafe(true); });
+  elToggle.addEventListener('click', ()=>{ showLegLines=!showLegLines; elToggle.textContent = showLegLines? '隐藏单腿曲线':'显示单腿曲线'; drawSafe(false); });
+  ;[elMin, elMax, elStep, elS0].forEach(el=> el.addEventListener('change', ()=> drawSafe(false)));
+  document.getElementById('exportPNG').addEventListener('click', exportPNG);
+  document.getElementById('exportCSV').addEventListener('click', exportCSV);
+
+  // ==== 简单自检测试（不会影响 UI） ====
+  (function selfTests(){
+    const tests=[]; const expect=(name,cond)=>tests.push({name,pass:!!cond});
+    expect('Call: S<K => 0', payoffPerUnit('Call',95,100)===0);
+    expect('Call: S>K => S-K', payoffPerUnit('Call',120,100)===20);
+    expect('Put : S>K => 0', payoffPerUnit('Put',120,100)===0);
+    expect('Put : S<K => K-S', payoffPerUnit('Put',80,100)===20);
+    // Buy Call 在 S=80,K=100,p=5 => -5（qty=1,mult=1）
+    expect('Buy Call 低于K 亏损=权利金', ((Math.max(80-100,0)-5)*1*1)===-5);
+    // Buy Call 在 S=130,K=100,p=5 => 25
+    expect('Buy Call 高于K 利润=(S-K)-p', ((Math.max(130-100,0)-5)*1*1)===25);
+    // BE ≈ K+p（步长1 容差0.5）
+    const K=100,p=5; const xs=Array.from({length:61},(_,i)=>70+i); const ys=xs.map(S=>(Math.max(S-K,0)-p));
+    const bes=findBreakevens(xs,ys); expect('BE≈K+p', Math.abs(bes[0]-(K+p))<=0.5);
+    diagEl.textContent = '自检结果 (共 '+tests.length+' 项)\n'+tests.map(t=>`${t.pass?'✅':'❌'} ${t.name}`).join('\n');
+  })();
+
+  // ==== 启动 ====
+  renderLegsTable();
+  elName.value = autoNameFromLegs();
+  drawSafe(false);
+})();
+</script>
+</body>
+</html>
