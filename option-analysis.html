@@ -123,6 +123,7 @@
     { id: uid(), type: 'Call', side: 'Sell', strike: 2700, premium: 30, qty: 1, multiplier: 300, showLine: false },
   ];
   let showLegLines = true;
+  let lastComputed = null;
 
   const elMin = document.getElementById('priceMin');
   const elMax = document.getElementById('priceMax');
@@ -201,15 +202,22 @@
 
   // ==== 渲染腿表 ====
   function renderLegsTable(){
-    tbody.innerHTML='';
+    const frag = document.createDocumentFragment();
     for(const leg of legs){
       const tr=document.createElement('tr');
+      tr.dataset.id = leg.id;
       tr.innerHTML=`
         <td>
-          <select data-key="type"><option ${leg.type==='Call'?'selected':''}>Call</option><option ${leg.type==='Put'?'selected':''}>Put</option></select>
+          <select data-key="type">
+            <option value="Call" ${leg.type==='Call'?'selected':''}>Call</option>
+            <option value="Put" ${leg.type==='Put'?'selected':''}>Put</option>
+          </select>
         </td>
         <td>
-          <select data-key="side"><option ${leg.side==='Buy'?'selected':''}>Buy</option><option ${leg.side==='Sell'?'selected':''}>Sell</option></select>
+          <select data-key="side">
+            <option value="Buy" ${leg.side==='Buy'?'selected':''}>Buy</option>
+            <option value="Sell" ${leg.side==='Sell'?'selected':''}>Sell</option>
+          </select>
         </td>
         <td><input class="number" data-key="strike" type="number" value="${leg.strike}"></td>
         <td><input class="number" data-key="premium" type="number" value="${leg.premium}"></td>
@@ -218,58 +226,80 @@
         <td style="text-align:center"><input type="checkbox" data-key="showLine" ${leg.showLine?'checked':''}></td>
         <td><button class="btn danger" data-action="del">删除</button></td>
       `;
-      tr.querySelectorAll('select,input').forEach(el=>{
-        el.addEventListener('change', ()=>{
-          const key=el.getAttribute('data-key');
-          if(key==='showLine') leg.showLine=el.checked;
-          else if(key==='type') leg.type=el.value;
-          else if(key==='side') leg.side=el.value;
-          else leg[key]=Number(el.value);
-          drawSafe(true);
-        });
-      });
-      tr.querySelector('[data-action="del"]').addEventListener('click', ()=>{
-        const idx=legs.findIndex(l=>l.id===leg.id);
-        if(idx>-1){ legs.splice(idx,1); renderLegsTable(); drawSafe(true); }
-      });
-      tbody.appendChild(tr);
+      frag.appendChild(tr);
+    }
+    tbody.replaceChildren(frag);
+  }
+
+  function handleLegChange(event){
+    const target = event.target instanceof Element ? event.target : null;
+    if(!target || !target.matches('input[data-key], select[data-key]')) return;
+    const key = target.getAttribute('data-key');
+    if(!key) return;
+    const tr = target.closest('tr');
+    if(!tr) return;
+    const leg = legs.find(l=>l.id===tr.dataset.id);
+    if(!leg) return;
+    if(key==='showLine') leg.showLine = target.checked;
+    else if(key==='type' || key==='side') leg[key] = target.value;
+    else leg[key] = Number(target.value);
+    drawSafe(true);
+  }
+
+  function handleLegDelete(event){
+    const origin = event.target instanceof Element ? event.target : null;
+    if(!origin) return;
+    const btn = origin.closest('[data-action="del"]');
+    if(!btn) return;
+    const tr = btn.closest('tr');
+    if(!tr) return;
+    const idx = legs.findIndex(l=>l.id===tr.dataset.id);
+    if(idx>-1){
+      legs.splice(idx,1);
+      renderLegsTable();
+      drawSafe(true);
     }
   }
 
   // ==== 计算与绘图 ====
   function compute(){
     const xs = buildX(elMin.value, elMax.value, elStep.value);
-    const total = new Array(xs.length).fill(0);
-    const legSeries = [];
-
-    for(const leg of legs){
+    const totalRaw = new Array(xs.length).fill(0);
+    const legDetails = legs.map(leg=>{
       const sgn = (leg.side==='Buy')? 1 : -1;
-      const data = [];
-      for(let i=0;i<xs.length;i++){
-        const S=xs[i];
+      const data = xs.map((S, idx)=>{
         const intrinsic = payoffPerUnit(leg.type, S, leg.strike);
         const pnlPerUnit = sgn*intrinsic - (leg.side==='Buy'? leg.premium : -leg.premium);
         const pnl = pnlPerUnit * leg.qty * leg.multiplier;
-        data.push(round2(pnl));
-        total[i]+=pnl;
-      }
-      if(showLegLines && leg.showLine){ legSeries.push({ name:`${leg.side} ${leg.type} K=${leg.strike}`, data }); }
-    }
+        totalRaw[idx]+=pnl;
+        return round2(pnl);
+      });
+      return { id: leg.id, name:`${leg.side} ${leg.type} K=${leg.strike}`, data, showLine: leg.showLine };
+    });
 
-    const bes = findBreakevens(xs, total);
-    const ext = estimateExtremes(xs, total);
+    const bes = findBreakevens(xs, totalRaw);
+    const ext = estimateExtremes(xs, totalRaw);
     const s0 = Number(elS0.value);
     let curPnL = null;
-    if (!Number.isNaN(s0)) curPnL = interpY(xs, total, s0);
+    if (!Number.isNaN(s0)) curPnL = interpY(xs, totalRaw, s0);
 
     const netPremium = legs.reduce((acc, leg)=> acc + ((leg.side==='Buy'? -1:1) * leg.premium * leg.qty * leg.multiplier), 0);
-
-    return { xs, total: total.map(round2), legSeries, bes, ext, netPremium: round2(netPremium), curPnL: curPnL==null? null: round2(curPnL) };
+    const result = {
+      xs,
+      total: totalRaw.map(round2),
+      legDetails,
+      bes,
+      ext,
+      netPremium: round2(netPremium),
+      curPnL: curPnL==null? null: round2(curPnL)
+    };
+    lastComputed = result;
+    return result;
   }
 
   function draw(shouldAutoName){
     if(!chart) return;
-    const { xs, total, legSeries, bes, ext, netPremium, curPnL } = compute();
+    const { xs, total, legDetails, bes, ext, netPremium, curPnL } = compute();
 
     // KPI
     kpiPremium.textContent = (netPremium>=0? '+':'') + netPremium.toLocaleString();
@@ -290,6 +320,17 @@
     }
     hintS0.textContent = s0Hint;
 
+    const legSeries = showLegLines
+      ? legDetails.filter(ld=>ld.showLine).map(ld=>({
+          name: ld.name,
+          type:'line',
+          showSymbol:false,
+          lineStyle:{ width:1.5, type:'dashed' },
+          data: xs.map((x,i)=>[x, ld.data[i]])
+        }))
+      : [];
+
+    const hasS0Point = !Number.isNaN(s0) && curPnL!=null;
     const option = {
       tooltip: { trigger:'axis', valueFormatter:(v)=> typeof v==='number'? v.toFixed(2): v },
       legend: { top: 0 },
@@ -298,26 +339,17 @@
       yAxis: { type:'value', name:'到期 P&L' },
       series: [
         { name:'总 P&L', type:'line', showSymbol:false, lineStyle:{ width:3 }, data: xs.map((x,i)=>[x,total[i]]) },
-        ...legSeries.map(ls=>({ name: ls.name, type:'line', showSymbol:false, lineStyle:{ width:1.5, type:'dashed' }, data: xs.map((x,i)=>[x,ls.data[i]]) })),
-        ...(Number.isNaN(s0) || curPnL==null ? [] : [
+        ...legSeries,
+        ...(!hasS0Point ? [] : [
           { name:'当前价点', type:'scatter', symbolSize:10, data:[[s0, curPnL]] }
         ])
       ],
-      markLine: undefined
+      graphic: hasS0Point ? [
+        { type:'group', left:12, bottom:6, children:[{ type:'text', style:{ text:'提示：虚线=单腿；实线=组合总P&L；圆点= S₀', fontSize:12 }}] }
+      ] : []
     };
 
     chart.setOption(option, true);
-
-    // 竖直标线（用 graphic 实现，避免全局 markLine 干扰）
-    if(!Number.isNaN(s0)){
-      chart.setOption({
-        markLine: undefined,
-        series: option.series,
-        graphic: [
-          { type:'group', left:12, bottom:6, children:[{ type:'text', style:{ text:'提示：虚线=单腿；实线=组合总P&L；圆点= S₀', fontSize:12 }}] }
-        ]
-      });
-    }
 
     // 策略名默认
     if(shouldAutoName){ elName.value = autoNameFromLegs(); }
@@ -345,22 +377,13 @@
     fetch(dataURL).then(res=>res.blob()).then(blob=> download(fname, blob));
   }
   function exportCSV(){
-    const xs = buildX(elMin.value, elMax.value, elStep.value);
-    const legData = legs.map(leg=>({ name:`${leg.side} ${leg.type} K=${leg.strike}`, arr:new Array(xs.length).fill(0) }));
-    const total = new Array(xs.length).fill(0);
-    legs.forEach((leg, li)=>{
-      const sgn = (leg.side==='Buy')? 1 : -1;
-      for(let i=0;i<xs.length;i++){
-        const S=xs[i];
-        const intrinsic=payoffPerUnit(leg.type,S,leg.strike);
-        const pnlPerUnit= sgn*intrinsic - (leg.side==='Buy'? leg.premium : -leg.premium);
-        const pnl = pnlPerUnit * leg.qty * leg.multiplier;
-        legData[li].arr[i]=round2(pnl); total[i]+=pnl;
-      }
-    });
-    const headers=['Price','Total',...legData.map(d=>d.name)];
+    const result = lastComputed || compute();
+    const { xs, total, legDetails } = result;
+    const headers=['Price','Total',...legDetails.map(d=>d.name)];
     const rows=[headers.join(',')];
-    for(let i=0;i<xs.length;i++) rows.push([xs[i], round2(total[i]), ...legData.map(d=>d.arr[i])].join(','));
+    for(let i=0;i<xs.length;i++){
+      rows.push([xs[i], total[i], ...legDetails.map(d=>d.data[i])].join(','));
+    }
     const csvContent='\uFEFF'+rows.join('\n'); // 关键修复：使用标准换行与 BOM
     const now = new Date();
     const ts = now.toISOString().slice(0,19).replace(/[-T:]/g,'');
@@ -371,11 +394,14 @@
   }
 
   // ==== 事件绑定 ====
+  tbody.addEventListener('change', handleLegChange);
+  tbody.addEventListener('click', handleLegDelete);
+
   elAdd.addEventListener('click', ()=>{ legs.push({ id: uid(), type:'Call', side:'Buy', strike:2600, premium:40, qty:1, multiplier:300, showLine:true }); renderLegsTable(); drawSafe(true); });
   elToggle.addEventListener('click', ()=>{ showLegLines=!showLegLines; elToggle.textContent = showLegLines? '隐藏单腿曲线':'显示单腿曲线'; drawSafe(false); });
   ;[elMin, elMax, elStep, elS0].forEach(el=> el.addEventListener('change', ()=> drawSafe(false)));
-  document.getElementById('exportPNG').addEventListener('click', exportPNG);
-  document.getElementById('exportCSV').addEventListener('click', exportCSV);
+  elExportPNG.addEventListener('click', exportPNG);
+  elExportCSV.addEventListener('click', exportCSV);
 
   // ==== 简单自检测试（不会影响 UI） ====
   (function selfTests(){
