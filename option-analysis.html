@@ -40,6 +40,12 @@
 
     <div class="card" style="margin-bottom:12px;">
       <div class="bd">
+        <div style="display:flex; flex-wrap:wrap; gap:10px; margin-bottom:12px; align-items:flex-end;">
+          <label class="field" style="flex:1; min-width:220px;">
+            <span class="muted">策略名</span>
+            <input id="strategyNameInput" type="text" value="" />
+          </label>
+        </div>
         <div class="row">
           <label class="field" style="grid-column: span 3;">
             <span class="muted">标的价格最小值</span>
@@ -68,10 +74,6 @@
           </label>
         </div>
         <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; align-items:center;">
-          <label class="field" style="flex:1; min-width:220px;">
-            <span class="muted">策略名</span>
-            <input id="strategyNameInput" type="text" value="" />
-          </label>
           <button id="toggleLegLines" class="btn">隐藏单腿曲线</button>
           <button id="addLeg" class="btn primary">添加腿</button>
           <button id="exportPNG" class="btn">导出 PNG</button>
