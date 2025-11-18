@@ -23,6 +23,7 @@
     th { font-weight:600; color:#374151; }
     .number { width:110px; }
     #chart { height: 480px; }
+    #positionChart { height: 260px; }
     .kpis { display:grid; grid-template-columns: repeat(5,1fr); gap:12px; }
     .kpi { padding:12px; border:1px solid var(--bd); border-radius:12px; background:#fff; }
     .kpi .t { font-size:12px; color:#6b7280; }
@@ -120,6 +121,12 @@
       <div class="bd">
         <div id="chart"></div>
         <div class="muted" style="margin-top:8px;">提示：虚线＝单腿；实线＝组合总P&L；竖线与圆点标示 S₀。</div>
+        <div style="margin:16px 0 8px; height:1px; background:var(--bd);"></div>
+        <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:8px; flex-wrap:wrap;">
+          <div style="font-weight:600;">持仓损益图</div>
+          <div class="muted">按标的价格分布的当前持仓盈亏，红亏绿盈，可用 S₀ 滑条查看当前位置。</div>
+        </div>
+        <div id="positionChart"></div>
       </div>
     </div>
   </div>
@@ -167,6 +174,7 @@
     document.querySelector('.wrap').prepend(warn);
   }
   const chart = (typeof echarts !== 'undefined') ? echarts.init(document.getElementById('chart')) : null;
+  const positionChart = (typeof echarts !== 'undefined') ? echarts.init(document.getElementById('positionChart')) : null;
 
   // ==== 工具函数 ====
   function uid(){ return 'id-' + Math.random().toString(36).slice(2,10); }
@@ -392,6 +400,20 @@
     };
 
     chart.setOption(option, true);
+
+    if(positionChart){
+      const barData = xs.map((x,i)=>({ value:[x,total[i]], itemStyle:{ color: total[i]>=0 ? '#16a34a' : '#ef4444' } }));
+      const posOption = {
+        tooltip: { trigger:'axis', axisPointer:{ type:'shadow' }, valueFormatter:(v)=> typeof v==='number'? v.toFixed(2): v },
+        grid: { left: 50, right: 24, top: 30, bottom: 40 },
+        xAxis: { type:'value', name:'标的价格 S', min:xmin, max:xmax, axisPointer:{show:true} },
+        yAxis: { type:'value', name:'持仓损益' },
+        series: [
+          { name:'持仓损益', type:'bar', data: barData, barWidth:'90%', markLine: s0MarkLine || undefined }
+        ]
+      };
+      positionChart.setOption(posOption, true);
+    }
 
     // 策略名默认
     if(shouldAutoName){ elName.value = autoNameFromLegs(); }
