@@ -169,6 +169,7 @@
   // ==== 工具函数 ====
   function uid(){ return 'id-' + Math.random().toString(36).slice(2,10); }
   function round2(n){ return Math.round(n*100)/100; }
+  function fmtNumber(n){ return Number.isFinite(n) ? Number(n).toLocaleString('zh-CN') : '—'; }
   function payoffPerUnit(type, S, K){ return type==='Call' ? Math.max(S-K,0) : Math.max(K-S,0); }
   function buildX(min, max, step){
     min = Number(min); max = Number(max); step = Math.max(1, Number(step)||1);
@@ -225,7 +226,7 @@
 
     elS0.value = next;
     elS0Slider.value = next;
-    elS0Display.textContent = next;
+    elS0Display.textContent = fmtNumber(next);
   }
   function autoNameFromLegs(){
     return legs.map(l=>`${l.side[0]}${l.type[0]}${l.strike}`).join('_') || 'options';
@@ -367,7 +368,7 @@
       silent: true,
       emphasis: { disabled: true },
       lineStyle: { color:'#f59e0b', width:2, type:'dashed' },
-      label: { formatter:'S₀', color:'#b45309', fontWeight:600 },
+      label: { formatter:({value})=> `S₀=${fmtNumber(value)}`, color:'#b45309', fontWeight:600, precision:0 },
       data: [{ xAxis: s0 }]
     };
     const option = {
