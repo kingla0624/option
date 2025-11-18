@@ -73,8 +73,8 @@
         <table id="legsTable">
           <thead>
             <tr>
-              <th>类型</th>
               <th>方向</th>
+              <th>类型</th>
               <th>行权价 K</th>
               <th>权利金</th>
               <th>数量</th>
@@ -208,15 +208,15 @@
       const tr = document.createElement('tr');
       tr.innerHTML = `
         <td>
-          <select data-key="type">
-            <option ${leg.type==='Call'?'selected':''}>Call</option>
-            <option ${leg.type==='Put'?'selected':''}>Put</option>
-          </select>
-        </td>
-        <td>
           <select data-key="side">
             <option ${leg.side==='Buy'?'selected':''}>Buy</option>
             <option ${leg.side==='Sell'?'selected':''}>Sell</option>
+          </select>
+        </td>
+        <td>
+          <select data-key="type">
+            <option ${leg.type==='Call'?'selected':''}>Call</option>
+            <option ${leg.type==='Put'?'selected':''}>Put</option>
           </select>
         </td>
         <td><input class="number" data-key="strike" type="number" value="${leg.strike}"></td>
