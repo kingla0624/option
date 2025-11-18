@@ -58,6 +58,15 @@
             <input id="currentPrice" type="number" value="2600" />
           </label>
         </div>
+        <div class="row" style="margin-top:6px; align-items:center;">
+          <label class="field" style="grid-column: span 12;">
+            <span class="muted" style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
+              <span>横向滑动条调整 S₀</span>
+              <span>当前 S₀：<b id="currentPriceDisplay">2600</b></span>
+            </span>
+            <input id="currentPriceSlider" type="range" min="1500" max="3500" step="10" value="2600" />
+          </label>
+        </div>
         <div style="display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; align-items:center;">
           <label class="field" style="flex:1; min-width:220px;">
             <span class="muted">策略名</span>
@@ -129,6 +138,8 @@
   const elMax = document.getElementById('priceMax');
   const elStep = document.getElementById('step');
   const elS0  = document.getElementById('currentPrice');
+  const elS0Slider = document.getElementById('currentPriceSlider');
+  const elS0Display = document.getElementById('currentPriceDisplay');
   const elAdd = document.getElementById('addLeg');
   const elToggle = document.getElementById('toggleLegLines');
   const elExportPNG = document.getElementById('exportPNG');
@@ -195,6 +206,26 @@
     const minMayUnbounded=(minPnL===ys[0] || minPnL===ys[ys.length-1]);
     const maxMayUnbounded=(maxPnL===ys[0] || maxPnL===ys[ys.length-1]);
     return { minPnL:round2(minPnL), maxPnL:round2(maxPnL), minMayUnbounded, maxMayUnbounded };
+  }
+  function syncS0Controls(fromSlider){
+    const min = Number(elMin.value);
+    const max = Number(elMax.value);
+    const step = Math.max(1, Number(elStep.value)||1);
+    const lower = Math.min(min, max);
+    const upper = Math.max(min, max);
+    elS0Slider.min = lower;
+    elS0Slider.max = upper;
+    elS0Slider.step = step;
+
+    const raw = fromSlider ? Number(elS0Slider.value) : Number(elS0.value);
+    let next = Number.isNaN(raw) ? lower : Math.min(Math.max(raw, lower), upper);
+    // 将值对齐到步长
+    next = Math.round((next - lower)/step)*step + lower;
+    next = Math.min(Math.max(next, lower), upper);
+
+    elS0.value = next;
+    elS0Slider.value = next;
+    elS0Display.textContent = next;
   }
   function autoNameFromLegs(){
     return legs.map(l=>`${l.side[0]}${l.type[0]}${l.strike}`).join('_') || 'options';
@@ -331,6 +362,14 @@
       : [];
 
     const hasS0Point = !Number.isNaN(s0) && curPnL!=null;
+    const s0MarkLine = !hasS0Point ? null : {
+      symbol: 'none',
+      silent: true,
+      emphasis: { disabled: true },
+      lineStyle: { color:'#f59e0b', width:2, type:'dashed' },
+      label: { formatter:'S₀', color:'#b45309', fontWeight:600 },
+      data: [{ xAxis: s0 }]
+    };
     const option = {
       tooltip: { trigger:'axis', valueFormatter:(v)=> typeof v==='number'? v.toFixed(2): v },
       legend: { top: 0 },
@@ -338,7 +377,7 @@
       xAxis: { type:'value', name:'标的价格 S', min:xmin, max:xmax, axisPointer:{show:true} },
       yAxis: { type:'value', name:'到期 P&L' },
       series: [
-        { name:'总 P&L', type:'line', showSymbol:false, lineStyle:{ width:3 }, data: xs.map((x,i)=>[x,total[i]]) },
+        { name:'总 P&L', type:'line', showSymbol:false, lineStyle:{ width:3 }, data: xs.map((x,i)=>[x,total[i]]), markLine: s0MarkLine || undefined },
         ...legSeries,
         ...(!hasS0Point ? [] : [
           { name:'当前价点', type:'scatter', symbolSize:10, data:[[s0, curPnL]] }
@@ -399,7 +438,14 @@
 
   elAdd.addEventListener('click', ()=>{ legs.push({ id: uid(), type:'Call', side:'Buy', strike:2600, premium:40, qty:1, multiplier:300, showLine:true }); renderLegsTable(); drawSafe(true); });
   elToggle.addEventListener('click', ()=>{ showLegLines=!showLegLines; elToggle.textContent = showLegLines? '隐藏单腿曲线':'显示单腿曲线'; drawSafe(false); });
-  ;[elMin, elMax, elStep, elS0].forEach(el=> el.addEventListener('change', ()=> drawSafe(false)));
+  ;[elMin, elMax, elStep].forEach(el=> {
+    const handler = ()=>{ syncS0Controls(false); drawSafe(false); };
+    el.addEventListener('change', handler);
+    el.addEventListener('input', handler);
+  });
+  elS0.addEventListener('change', ()=>{ syncS0Controls(false); drawSafe(false); });
+  elS0.addEventListener('input', ()=>{ syncS0Controls(false); drawSafe(false); });
+  elS0Slider.addEventListener('input', ()=>{ syncS0Controls(true); drawSafe(false); });
   elExportPNG.addEventListener('click', exportPNG);
   elExportCSV.addEventListener('click', exportCSV);
 
@@ -422,6 +468,7 @@
 
   // ==== 启动 ====
   renderLegsTable();
+  syncS0Controls(false);
   elName.value = autoNameFromLegs();
   drawSafe(false);
 })();
