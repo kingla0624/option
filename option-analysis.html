@@ -88,8 +88,8 @@
         <table id="legsTable">
           <thead>
             <tr>
-              <th>类型</th>
               <th>方向</th>
+              <th>类型</th>
               <th>行权价 K</th>
               <th>权利金</th>
               <th>数量</th>
@@ -242,15 +242,15 @@
       tr.dataset.id = leg.id;
       tr.innerHTML=`
         <td>
-          <select data-key="type">
-            <option value="Call" ${leg.type==='Call'?'selected':''}>Call</option>
-            <option value="Put" ${leg.type==='Put'?'selected':''}>Put</option>
-          </select>
-        </td>
-        <td>
           <select data-key="side">
             <option value="Buy" ${leg.side==='Buy'?'selected':''}>Buy</option>
             <option value="Sell" ${leg.side==='Sell'?'selected':''}>Sell</option>
+          </select>
+        </td>
+        <td>
+          <select data-key="type">
+            <option value="Call" ${leg.type==='Call'?'selected':''}>Call</option>
+            <option value="Put" ${leg.type==='Put'?'selected':''}>Put</option>
           </select>
         </td>
         <td><input class="number" data-key="strike" type="number" value="${leg.strike}"></td>
