@@ -175,6 +175,10 @@
   }
   const chart = (typeof echarts !== 'undefined') ? echarts.init(document.getElementById('chart')) : null;
   const positionChart = (typeof echarts !== 'undefined') ? echarts.init(document.getElementById('positionChart')) : null;
+  window.addEventListener('resize', ()=>{
+    chart && chart.resize();
+    positionChart && positionChart.resize();
+  });
 
   // ==== 工具函数 ====
   function uid(){ return 'id-' + Math.random().toString(36).slice(2,10); }
